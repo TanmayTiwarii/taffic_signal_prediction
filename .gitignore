@@ -1,0 +1,17 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Dataset folders (DO NOT upload large datasets)
+dataset/
+dataset_balanced/
+
+# Model files (optional – upload only if required)
+*.pth
+
+# OS files
+.DS_Store
+Thumbs.db
