@@ -10,11 +10,18 @@ from PIL import Image
 MODEL_PATH = "traffic_sign_model.pth"
 TRAIN_DIR = "dataset_balanced/traffic_Data/DATA"
 LABELS_CSV = "dataset/traffic_Data/labels.csv"
+
 IMG_SIZE = 64
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-CONF_THRESHOLD = 0.6
 
-# ================= LOAD LABELS CSV =================
+# Detection parameters
+WINDOW_SIZE = 96
+STRIDE = 48
+CONF_THRESHOLD = 0.97        # strong confidence
+MARGIN_THRESHOLD = 0.20      # top1 - top2 margin
+MAX_DETECTIONS = 3           # max boxes per frame
+
+# ================= LOAD LABELS =================
 labels_df = pd.read_csv(LABELS_CSV)
 classid_to_name = dict(zip(labels_df["ClassId"], labels_df["Name"]))
 
@@ -23,8 +30,6 @@ train_dataset = datasets.ImageFolder(
     TRAIN_DIR,
     transform=transforms.ToTensor()
 )
-
-# maps model output index -> actual class id (folder name)
 idx_to_classid = {v: int(k) for k, v in train_dataset.class_to_idx.items()}
 
 # ================= TRANSFORMS =================
@@ -37,22 +42,19 @@ transform = transforms.Compose([
     )
 ])
 
-# ================= LOAD MODEL (SAFE FIX) =================
+# ================= LOAD MODEL (SAFE) =================
 state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
-
-# infer output classes from checkpoint
-num_classes_ckpt = state_dict["fc.weight"].shape[0]
+num_classes = state_dict["fc.weight"].shape[0]
 
 model = models.resnet18(weights=None)
-model.fc = nn.Linear(model.fc.in_features, num_classes_ckpt)
-
+model.fc = nn.Linear(model.fc.in_features, num_classes)
 model.load_state_dict(state_dict)
 model = model.to(DEVICE)
 model.eval()
 
 # ================= OPENCV =================
 cap = cv2.VideoCapture(0)
-print("🚦 Live Traffic Sign Prediction")
+print("🚦 Traffic Sign Detection (Sliding Window)")
 print("Press 'q' to quit")
 
 while True:
@@ -60,40 +62,59 @@ while True:
     if not ret:
         break
 
-    # OpenCV BGR → RGB
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    h, w, _ = frame.shape
+    detections = []
 
-    # Convert to PIL Image
-    pil_img = Image.fromarray(rgb)
+    # ===== SLIDING WINDOW SCAN =====
+    for y in range(0, h - WINDOW_SIZE, STRIDE):
+        for x in range(0, w - WINDOW_SIZE, STRIDE):
+            roi = frame[y:y + WINDOW_SIZE, x:x + WINDOW_SIZE]
 
-    # Apply transforms
-    img = transform(pil_img).unsqueeze(0).to(DEVICE)
+            rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb)
+            img = transform(pil_img).unsqueeze(0).to(DEVICE)
 
-    # Prediction
-    with torch.no_grad():
-        outputs = model(img)
-        probs = torch.softmax(outputs, dim=1)
-        conf, pred_idx = torch.max(probs, 1)
+            with torch.no_grad():
+                outputs = model(img)
+                probs = torch.softmax(outputs, dim=1)[0]
 
-    label_text = "Unknown"
-    color = (0, 0, 255)
+            top2 = torch.topk(probs, 2)
+            conf1 = top2.values[0].item()
+            conf2 = top2.values[1].item()
+            pred_idx = top2.indices[0].item()
 
-    if conf.item() >= CONF_THRESHOLD and pred_idx.item() in idx_to_classid:
-        class_id = idx_to_classid[pred_idx.item()]
-        class_name = classid_to_name.get(class_id, f"Class {class_id}")
-        label_text = f"{class_name} ({conf.item()*100:.1f}%)"
-        color = (0, 255, 0)
+            # ===== BACKGROUND REJECTION =====
+            if (
+                conf1 > CONF_THRESHOLD and
+                (conf1 - conf2) > MARGIN_THRESHOLD and
+                pred_idx in idx_to_classid
+            ):
+                class_id = idx_to_classid[pred_idx]
+                label = classid_to_name.get(class_id, "Traffic Sign")
+                detections.append((x, y, label, conf1))
 
-    # Display result
-    cv2.putText(
-        frame,
-        label_text,
-        (20, 40),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.9,
-        color,
-        2
-    )
+    # ===== KEEP ONLY BEST DETECTIONS =====
+    detections = sorted(detections, key=lambda x: x[3], reverse=True)
+    detections = detections[:MAX_DETECTIONS]
+
+    # ===== DRAW DETECTIONS =====
+    for (x, y, label, conf) in detections:
+        cv2.rectangle(
+            frame,
+            (x, y),
+            (x + WINDOW_SIZE, y + WINDOW_SIZE),
+            (0, 255, 0),
+            2
+        )
+        cv2.putText(
+            frame,
+            f"{label} ({conf*100:.1f}%)",
+            (x, y - 6),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2
+        )
 
     cv2.imshow("Traffic Sign Detection", frame)
 

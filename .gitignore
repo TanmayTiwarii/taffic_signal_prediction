@@ -1,17 +1,52 @@
-# Virtual environment
-venv/
-
-# Python cache
+# =====================
+# Python
+# =====================
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 
-# Dataset folders (DO NOT upload large datasets)
+# =====================
+# Virtual Environments
+# =====================
+venv/
+.env/
+
+# =====================
+# PyTorch / YOLO
+# =====================
+*.pt
+*.pth
+runs/
+
+# =====================
+# Datasets
+# =====================
 dataset/
 dataset_balanced/
+yolo_dataset/
 
-# Model files (optional – upload only if required)
-*.pth
+# =====================
+# Logs & Outputs
+# =====================
+*.log
+*.tmp
 
-# OS files
+# =====================
+# OS / Editor
+# =====================
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# =====================
+# Jupyter
+# =====================
+.ipynb_checkpoints/
+
+# =====================
+# Misc
+# =====================
+*.zip
+*.rar
+*.7z
