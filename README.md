@@ -77,6 +77,11 @@ Class imbalance was handled using **targeted data augmentation**.
 - Confusion matrix used for detailed per-class performance analysis
 
 ---
+## YOLOv8 Detection
+- Model: YOLOv8n
+- Dataset: Converted from classification to detection (weak supervision)
+- Real-time inference supported via webcam
+
 
 ## 🛠️ How to Run
 
